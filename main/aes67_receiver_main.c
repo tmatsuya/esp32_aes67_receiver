@@ -142,12 +142,20 @@ static void mcast_example_task(void *pvParameters)
     int sock, i;
     static int seq_no_before = -1;
     unsigned char recvbuf[1024],pcmbuf[1024];
-    char raddr_name[32] = { 0 };
+    //char raddr_name[32] = { 0 };
     int seq_no, seq_no_diff, len, err;
     struct sockaddr_storage raddr; // Large enough for IPv4
     socklen_t socklen = sizeof(raddr);
     i2s_chan_handle_t tx_handle;
     size_t bytes_written;
+    int pcm_msec;		// 1 or 5 msec interval
+    //int rtp_payload_size;	// 300 (L24 1ms) or 972 (L16 5ms)
+    int pcm_byte_per_frame;	// 6 (L24) or 4 (L16)
+
+
+    pcm_byte_per_frame = 4;
+    pcm_msec = 5;
+    //rtp_payload_size = pcm_byte_per_frame * 48 * pcm_msec;
 
 
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
@@ -218,11 +226,11 @@ static void mcast_example_task(void *pvParameters)
                 }
                 seq_no_before = seq_no;
                 // swap byte order
-                for (i=0; i<4*48*5; i+=2) {
+                for (i=0; i<pcm_byte_per_frame*48*pcm_msec; i+=(pcm_byte_per_frame>>1)) {
                     pcmbuf[i]  =recvbuf[13+i];
                     pcmbuf[i+1]=recvbuf[12+i];
                 }
-                i2s_channel_write(tx_handle, pcmbuf, 4*48*5, &bytes_written, 1000);
+                i2s_channel_write(tx_handle, pcmbuf, pcm_byte_per_frame*48*pcm_msec, &bytes_written, 1000);
             } else {
                 ESP_LOGE(TAG, "multicast recvfrom failed: errno %d", errno);
                 err = -1;
