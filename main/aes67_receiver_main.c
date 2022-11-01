@@ -28,6 +28,8 @@
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
 
+//#define TO_L16			// L24 to L16 convert
+
 #define UDP_PORT		5004
 #define MULTICAST_LOOPBACK	CONFIG_EXAMPLE_LOOPBACK
 #define MULTICAST_TTL		CONFIG_EXAMPLE_MULTICAST_TTL
@@ -139,9 +141,9 @@ err:
 
 static void mcast_example_task(void *pvParameters)
 {
-    int sock, i;
+    int sock, i, tmp1, tmp2, tmp3;
     static int seq_no_before = -1;
-    unsigned char recvbuf[1024],pcmbuf[1024];
+    unsigned char recvbuf[2000];
     //char raddr_name[32] = { 0 };
     int seq_no, seq_no_diff, len, err;
     struct sockaddr_storage raddr; // Large enough for IPv4
@@ -153,8 +155,13 @@ static void mcast_example_task(void *pvParameters)
     int pcm_byte_per_frame;	// 6 (L24) or 4 (L16)
 
 
+#ifdef TO_L16			// L24 to L16 convert
     pcm_byte_per_frame = 4;
     pcm_msec = 5;
+#else				// no convert
+    pcm_byte_per_frame = 8;
+    pcm_msec = 5;
+#endif
     //rtp_payload_size = pcm_byte_per_frame * 48 * pcm_msec;
 
 
@@ -164,7 +171,11 @@ static void mcast_example_task(void *pvParameters)
 
     i2s_std_config_t std_cfg = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(48000),
+#ifdef TO_L16			// L24 to L16 convert
         .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+#else
+        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
+#endif
     //    .slot_cfg = I2S_STD_PHILIP_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
@@ -226,11 +237,24 @@ static void mcast_example_task(void *pvParameters)
                 }
                 seq_no_before = seq_no;
                 // swap byte order
+#ifdef TO_L16			// L24 to L16 convert
                 for (i=0; i<pcm_byte_per_frame*48*pcm_msec; i+=(pcm_byte_per_frame>>1)) {
-                    pcmbuf[i]  =recvbuf[13+i];
-                    pcmbuf[i+1]=recvbuf[12+i];
+                    tmp1          = recvbuf[12+i];
+                    recvbuf[12+i] = recvbuf[13+i];
+                    recvbuf[13+i] = tmp1;
                 }
-                i2s_channel_write(tx_handle, pcmbuf, pcm_byte_per_frame*48*pcm_msec, &bytes_written, 1000);
+#else
+                for (i=(48*pcm_msec*2-1); i>=0; --i) {
+                    tmp1            = recvbuf[12+i*3];
+                    tmp2            = recvbuf[13+i*3];
+                    tmp3            = recvbuf[14+i*3];
+                    recvbuf[12+i*4] = 0;
+                    recvbuf[13+i*4] = tmp3;
+                    recvbuf[14+i*4] = tmp2;
+                    recvbuf[15+i*4] = tmp1;
+                }
+#endif
+                i2s_channel_write(tx_handle, recvbuf+12, pcm_byte_per_frame*48*pcm_msec, &bytes_written, 1000);
             } else {
                 ESP_LOGE(TAG, "multicast recvfrom failed: errno %d", errno);
                 err = -1;
