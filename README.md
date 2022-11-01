@@ -38,7 +38,7 @@
 
  4-4. cd esp32_aes67_receiver
 
- 4-5. idf.py  menuconfig  ... Menuより"Example Config"を選び、Multicast IPとPortを設定する。"Example Connection Config"からWiFi SSIDとWiFi Passwordも設定すること。
+ 4-5. idf.py  menuconfig  ... Menuより"Example Connection Config"からWiFi SSIDとWiFi Passwordも設定すること。さらにソース上の UDP_PORT と MULTICAST_IPV4_ADDR マクロにマルチキャストアドレスをして英すること。  #define TO_L16 をコメントすると L24、コメントしないと L16で動作すsる
 
  4-6. idf.py -p /dev/ESP32シリアルデバイス flash
 
