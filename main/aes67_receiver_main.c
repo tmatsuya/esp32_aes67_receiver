@@ -33,7 +33,7 @@
 #define UDP_PORT		5004
 #define MULTICAST_LOOPBACK	CONFIG_EXAMPLE_LOOPBACK
 #define MULTICAST_TTL		CONFIG_EXAMPLE_MULTICAST_TTL
-#define MULTICAST_IPV4_ADDR	"239.69.83.134"
+#define MULTICAST_IPV4_ADDR	"239.69.83.133"
 
 static const char *TAG = "multicast";
 static const char *V4TAG = "mcast-ipv4";
@@ -141,7 +141,7 @@ err:
 
 static void mcast_example_task(void *pvParameters)
 {
-    int sock, i, tmp1, tmp2, tmp3;
+    int sock, i, tmp1;
     static int seq_no_before = -1;
     unsigned char recvbuf[2000];
     //char raddr_name[32] = { 0 };
@@ -160,7 +160,7 @@ static void mcast_example_task(void *pvParameters)
     pcm_msec = 5;
 #else				// no convert
     pcm_byte_per_frame = 8;
-    pcm_msec = 5;
+    pcm_msec = 1;
 #endif
     //rtp_payload_size = pcm_byte_per_frame * 48 * pcm_msec;
 
@@ -245,13 +245,11 @@ static void mcast_example_task(void *pvParameters)
                 }
 #else
                 for (i=(48*pcm_msec*2-1); i>=0; --i) {
-                    tmp1            = recvbuf[12+i*3];
-                    tmp2            = recvbuf[13+i*3];
-                    tmp3            = recvbuf[14+i*3];
+                    tmp1            = recvbuf[14+i*3];
+                    recvbuf[15+i*4] = recvbuf[12+i*3];
+                    recvbuf[14+i*4] = recvbuf[13+i*3];
+                    recvbuf[13+i*4] = tmp1;
                     recvbuf[12+i*4] = 0;
-                    recvbuf[13+i*4] = tmp3;
-                    recvbuf[14+i*4] = tmp2;
-                    recvbuf[15+i*4] = tmp1;
                 }
 #endif
                 i2s_channel_write(tx_handle, recvbuf+12, pcm_byte_per_frame*48*pcm_msec, &bytes_written, 1000);
