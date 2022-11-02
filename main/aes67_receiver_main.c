@@ -33,7 +33,7 @@
 #define UDP_PORT		5004
 #define MULTICAST_LOOPBACK	CONFIG_EXAMPLE_LOOPBACK
 #define MULTICAST_TTL		CONFIG_EXAMPLE_MULTICAST_TTL
-#define MULTICAST_IPV4_ADDR	"239.69.83.133"
+#define MULTICAST_IPV4_ADDR	"239.69.83.134"
 
 static const char *TAG = "multicast";
 static const char *V4TAG = "mcast-ipv4";
@@ -151,7 +151,7 @@ static void mcast_example_task(void *pvParameters)
     i2s_chan_handle_t tx_handle;
     size_t bytes_written;
     int pcm_msec;		// 1 or 5 msec interval
-    //int rtp_payload_size;	// 300 (L24 1ms) or 972 (L16 5ms)
+    //int rtp_payload_size;	// 204 (L16 1ms) or 300 (L24 1ms) or 972 (L16 5ms) or 1452 (L24 5ms)
     int pcm_byte_per_frame;	// 6 (L24) or 4 (L16)
 
 
@@ -160,7 +160,7 @@ static void mcast_example_task(void *pvParameters)
     pcm_msec = 5;
 #else				// no convert
     pcm_byte_per_frame = 8;
-    pcm_msec = 1;
+    pcm_msec = 5;
 #endif
     //rtp_payload_size = pcm_byte_per_frame * 48 * pcm_msec;
 
