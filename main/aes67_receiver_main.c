@@ -274,6 +274,11 @@ static void mcast_example_task(void *pvParameters)
         close(sock);
     }
 
+    /* Have to stop the channel before deleting it */
+    i2s_channel_disable(tx_handle);
+    /* If the handle is not needed any more, delete it to release the channel resources */
+    i2s_del_channel(tx_handle);
+
 }
 
 void app_main(void)
