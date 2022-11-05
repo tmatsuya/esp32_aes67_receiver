@@ -31,15 +31,18 @@
 //#define TO_L16			// L24 to L16 convert
 
 #define UDP_PORT		5004
+#define	MULTICAST_IPV4_ADDR	"239.69.83.134"
 #define MULTICAST_LOOPBACK	CONFIG_EXAMPLE_LOOPBACK
 #define MULTICAST_TTL		CONFIG_EXAMPLE_MULTICAST_TTL
-#define MULTICAST_IPV4_ADDR	"239.69.83.134"
+
+#define	SDP_PORT		9875
+#define SDP_IPV4_ADDR		"239.255.255.255"
 
 static const char *TAG = "multicast";
 static const char *V4TAG = "mcast-ipv4";
 
 
-static int socket_add_ipv4_multicast_group(int sock, bool assign_source_if)
+static int socket_add_ipv4_multicast_group(int sock, bool assign_source_if, char *ipv4_addr, int udp)
 {
     struct ip_mreq imreq = { 0 };
     struct in_addr iaddr = { 0 };
@@ -47,16 +50,16 @@ static int socket_add_ipv4_multicast_group(int sock, bool assign_source_if)
     // Configure source interface
     imreq.imr_interface.s_addr = IPADDR_ANY;
     // Configure multicast address to listen to
-    err = inet_aton(MULTICAST_IPV4_ADDR, &imreq.imr_multiaddr.s_addr);
+    err = inet_aton(ipv4_addr, &imreq.imr_multiaddr.s_addr);
     if (err != 1) {
-        ESP_LOGE(V4TAG, "Configured IPV4 multicast address '%s' is invalid.", MULTICAST_IPV4_ADDR);
+        ESP_LOGE(V4TAG, "Configured IPV4 multicast address '%s' is invalid.", ipv4_addr);
         // Errors in the return value have to be negative
         err = -1;
         goto err;
     }
     ESP_LOGI(TAG, "Configured IPV4 Multicast address %s", inet_ntoa(imreq.imr_multiaddr.s_addr));
     if (!IP_MULTICAST(ntohl(imreq.imr_multiaddr.s_addr))) {
-        ESP_LOGW(V4TAG, "Configured IPV4 multicast address '%s' is not a valid multicast address. This will probably not work.", MULTICAST_IPV4_ADDR);
+        ESP_LOGW(V4TAG, "Configured IPV4 multicast address '%s' is not a valid multicast address. This will probably not work.", ipv4_addr);
     }
 
     if (assign_source_if) {
@@ -81,7 +84,7 @@ static int socket_add_ipv4_multicast_group(int sock, bool assign_source_if)
     return err;
 }
 
-static int create_multicast_ipv4_socket(void)
+static int create_multicast_ipv4_socket(char *ipv4_addr, int udp)
 {
     struct sockaddr_in saddr = { 0 };
     int sock = -1;
@@ -95,7 +98,7 @@ static int create_multicast_ipv4_socket(void)
 
     // Bind the socket to any address
     saddr.sin_family = PF_INET;
-    saddr.sin_port = htons(UDP_PORT);
+    saddr.sin_port = htons(udp);
     saddr.sin_addr.s_addr = htonl(INADDR_ANY);
     err = bind(sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr_in));
     if (err < 0) {
@@ -126,7 +129,7 @@ static int create_multicast_ipv4_socket(void)
 
     // this is also a listening socket, so add it to the multicast
     // group for listening...
-    err = socket_add_ipv4_multicast_group(sock, true);
+    err = socket_add_ipv4_multicast_group(sock, true, ipv4_addr, udp);
     if (err < 0) {
         goto err;
     }
@@ -161,7 +164,7 @@ static void mcast_example_task(void *pvParameters)
 
     while (1) {
 
-        sock = create_multicast_ipv4_socket();
+        sock = create_multicast_ipv4_socket(MULTICAST_IPV4_ADDR, UDP_PORT);
         if (sock < 0) {
             ESP_LOGE(TAG, "Failed to create IPv4 multicast socket");
         }
@@ -315,6 +318,96 @@ static void mcast_example_task(void *pvParameters)
 
 }
 
+static void manage_example_task(void *pvParameters)
+{
+    int sock, i, rc, dst_ipv4_port;
+    unsigned char recvbuf[384], *p;
+    char p1 = 0, p2[64], dst_ipv4_addr[16];
+    //char raddr_name[32] = { 0 };
+    int len, err;
+    struct sockaddr_storage raddr; // Large enough for IPv4
+    socklen_t socklen = sizeof(raddr);
+
+    //rtp_payload_size = pcm_byte_per_frame * 48 * pcm_msec;
+
+    while (1) {
+        sock = create_multicast_ipv4_socket(SDP_IPV4_ADDR, SDP_PORT);
+        if (sock < 0) {
+            ESP_LOGE(TAG, "Failed to create IPv4 multicast socket");
+        }
+
+        if (sock < 0) {
+                // Nothing to do!
+                vTaskDelay(5 / portTICK_PERIOD_MS);
+                continue;
+        }
+
+        // set destination multicast addresses for sending from these sockets
+        struct sockaddr_in sdestv4 = {
+            .sin_family = PF_INET,
+            .sin_port = htons(SDP_PORT),
+        };
+        // We know this inet_aton will pass because we did it above already
+        inet_aton(SDP_IPV4_ADDR, &sdestv4.sin_addr.s_addr);
+
+
+        // Loop waiting for UDP received, and sending UDP packets if we don't
+        // see any.
+        err = 1;
+
+        while (err > 0) {
+            len = recvfrom(sock, recvbuf, sizeof(recvbuf)-1, 0, (struct sockaddr *)&raddr, &socklen);
+            if (len > 0) {
+                recvbuf[len] = '\0';
+                if (!strcmp( (char *)recvbuf+8, "application/sdp") ) {
+                    ESP_LOGI(TAG, "Recieved SDP");
+                    for (p = recvbuf+24; p < (recvbuf+len); ++p) {
+                        if (*(p+1) == '=') {
+                            p1 = *p;
+                            p += 2;
+                            for (i=0; i<sizeof(p2) && *p != '\r'; ++i, ++p)
+                                p2[i] = *p;
+                            p2[i] = '\0';
+                        }
+                        if (*p == '\r' || *p == '\0') {
+                            if (p1 == 'c') {		// Connection information
+                                char *p0;
+                                rc = sscanf(p2, "IN IP4 %s", dst_ipv4_addr);
+                                for (p0 = dst_ipv4_addr; p0 < (dst_ipv4_addr+strlen(dst_ipv4_addr)); ++p0)
+                                    if (*p0 == '/') *p0 = '\0';
+                                ESP_LOGI(TAG, "Found Multicast addr:%s", dst_ipv4_addr);
+                            } else if (p1 == 'm') {		// Media name and transport
+                                rc = sscanf(p2, "audio %d", &dst_ipv4_port);
+                                ESP_LOGI(TAG, "Found Multicast port:%d", dst_ipv4_port);
+                            } else {
+//                                ESP_LOGI(TAG, "%c->%s", p1, p2);
+                            }
+                        }
+                    }
+                }
+            } else {
+                ESP_LOGE(TAG, "multicast recvfrom failed: errno %d", errno);
+                err = -1;
+                break;
+            }
+
+            // Get the sender's address as a string
+            //if (raddr.ss_family == PF_INET) {
+            //    inet_ntoa_r(((struct sockaddr_in *)&raddr)->sin_addr,
+            //                raddr_name, sizeof(raddr_name)-1);
+            //}
+            //ESP_LOGI(TAG, "received %d bytes from %s:", len, raddr_name);
+            //ESP_LOGI(TAG, "seq=%d", seq_no);
+
+        }
+
+        ESP_LOGE(TAG, "Shutting down socket and restarting...");
+        shutdown(sock, 0);
+        close(sock);
+    }
+
+}
+
 void app_main(void)
 {
     ESP_ERROR_CHECK(nvs_flash_init());
@@ -327,7 +420,8 @@ void app_main(void)
      */
     ESP_ERROR_CHECK(example_connect());
 
-    xTaskCreate(&mcast_example_task, "mcast_task", 4096, NULL, 5, NULL);
-    //xTaskCreatePinnedToCore(&mcast_example_task, "Task0", 4096, NULL, 5, NULL, 1);
+    //xTaskCreate(&mcast_example_task, "mcast_task", 4096, NULL, 5, NULL);
+    xTaskCreatePinnedToCore(&mcast_example_task, "mcast_task", 4096, NULL, 5, NULL, 0);
+    xTaskCreatePinnedToCore(&manage_example_task, "manage_task", 4096, NULL, 5, NULL, 1);
 
 }
