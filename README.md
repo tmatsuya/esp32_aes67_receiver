@@ -38,7 +38,7 @@
 
  4-4. cd esp32_aes67_receiver
 
- 4-5. idf.py  menuconfig  ... Menuより"Example Connection Config"からWiFi SSIDとWiFi Passwordも設定すること。さらにソース上の UDP_PORT と MULTICAST_IPV4_ADDR マクロにマルチキャストアドレスをして英すること。またネットワーク上のSDPからソースを学習でき、ボード上のボタン(Default GPIO0)を押すことで入力先を切り替えできる
+ 4-5. idf.py  menuconfig  ... Menuより"Example Connection Config"からWiFi SSIDとWiFi Passwordも設定すること。さらにソース上の UDP_PORT と MULTICAST_IPV4_ADDR マクロに初期値のマルチキャストアドレスを設定すること。またネットワーク上のSDPパケットからAES67ソースを自動学習でき(最大16ソース)、ボード上のボタン(Default GPIO0)を押すことで入力先を切り替えできる
 
  4-6. idf.py -p /dev/ESP32シリアルデバイス flash
 
