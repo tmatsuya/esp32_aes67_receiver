@@ -366,7 +366,7 @@ static void manage_example_task(void *pvParameters)
         char dst_ipv4_addr[16];
         int  dst_ipv4_port;
     } sdp_table[SDP_RECIEVE_ENTRY_MAX];
-    int sdp_table_max = 0;
+    int sdp_table_max;
     char p1 = 0, p2[64], dst_ipv4_addr[16];
     //char raddr_name[32] = { 0 };
     int len, err;
@@ -381,6 +381,10 @@ static void manage_example_task(void *pvParameters)
     //rtp_payload_size = pcm_byte_per_frame * 48 * pcm_msec;
 
     button = button_before = 0;
+
+    sdp_table_max = 1;
+    strcpy( sdp_table[0].dst_ipv4_addr, MULTICAST_IPV4_ADDR);
+    sdp_table[0].dst_ipv4_port = UDP_PORT;
 
     while (1) {
         struct timeval tv = {
