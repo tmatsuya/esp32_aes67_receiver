@@ -28,19 +28,30 @@
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
 
-//#define TO_L16			// L24 to L16 convert
-
+#define MULTICAST_IPV4_ADDR	"239.69.83.134"
 #define UDP_PORT		5004
-#define	MULTICAST_IPV4_ADDR	"239.69.83.134"
+
 #define MULTICAST_LOOPBACK	CONFIG_EXAMPLE_LOOPBACK
 #define MULTICAST_TTL		CONFIG_EXAMPLE_MULTICAST_TTL
 
-#define	SDP_PORT		9875
 #define SDP_IPV4_ADDR		"239.255.255.255"
+#define	SDP_PORT		9875
+
+#define	SDP_RECIEVE_ENTRY_MAX	(16)
+
+#define BUTTON_GPIO		(0)
+
 
 static const char *TAG = "multicast";
 static const char *V4TAG = "mcast-ipv4";
 
+static char multicast_ipv4_addr_cur[16] = MULTICAST_IPV4_ADDR;
+static int  multicast_ipv4_port_cur = UDP_PORT;
+
+static char multicast_ipv4_addr_next[16] = MULTICAST_IPV4_ADDR; 
+static int  multicast_ipv4_port_next = UDP_PORT;
+
+static int reload_request          = 0;
 
 static int socket_add_ipv4_multicast_group(int sock, bool assign_source_if, char *ipv4_addr, int udp)
 {
@@ -144,13 +155,14 @@ err:
 
 static void mcast_example_task(void *pvParameters)
 {
-    int sock, i, tmp1;
+    int sock, i, tmp1, rc;
     static int seq_no_before = -1;
     unsigned char recvbuf[2000];
     //char raddr_name[32] = { 0 };
     int seq_no, seq_no_diff, len, old_len, err;
     struct sockaddr_storage raddr; // Large enough for IPv4
     socklen_t socklen = sizeof(raddr);
+    fd_set rfds, rfds_default;
     i2s_chan_handle_t tx_handle;
     size_t bytes_written;
     int pcm_msec = 1;		// 1 or 5 msec interval
@@ -163,8 +175,20 @@ static void mcast_example_task(void *pvParameters)
     old_len = -1;
 
     while (1) {
+        struct timeval tv = {
+            .tv_sec = 0,
+            .tv_usec = 50 * 1000,	// 50 msec
+        };
 
-        sock = create_multicast_ipv4_socket(MULTICAST_IPV4_ADDR, UDP_PORT);
+reload:
+        if (reload_request) {
+            strcpy(multicast_ipv4_addr_cur, multicast_ipv4_addr_next);
+            multicast_ipv4_port_cur  = multicast_ipv4_port_next;
+            old_len = 0;
+            reload_request = 0;
+        }
+
+        sock = create_multicast_ipv4_socket(multicast_ipv4_addr_cur, multicast_ipv4_port_cur);
         if (sock < 0) {
             ESP_LOGE(TAG, "Failed to create IPv4 multicast socket");
         }
@@ -178,16 +202,26 @@ static void mcast_example_task(void *pvParameters)
         // set destination multicast addresses for sending from these sockets
         struct sockaddr_in sdestv4 = {
             .sin_family = PF_INET,
-            .sin_port = htons(UDP_PORT),
+            .sin_port = htons(multicast_ipv4_port_cur),
         };
         // We know this inet_aton will pass because we did it above already
-        inet_aton(MULTICAST_IPV4_ADDR, &sdestv4.sin_addr.s_addr);
+        inet_aton(multicast_ipv4_addr_cur, &sdestv4.sin_addr.s_addr);
 
+        FD_ZERO(&rfds_default);
+        FD_SET(sock, &rfds_default);
 
-        // Loop waiting for UDP received, and sending UDP packets if we don't
-        // see any.
-        err = 1;
-
+        do {
+            memcpy(&rfds, &rfds_default, sizeof(fd_set));
+            rc = select(sock + 1, &rfds, NULL, NULL, &tv);
+            if (rc < 0) {
+                ESP_LOGE(TAG, "Select failed: errno %d", errno);
+            }
+            if (reload_request) {
+                shutdown(sock, 0);
+                close(sock);
+                goto reload;
+            }
+        } while (rc == 0);
         len = recvfrom(sock, recvbuf, sizeof(recvbuf)-1, 0, (struct sockaddr *)&raddr, &socklen);
         if ( len != old_len ) {
             switch (len) {
@@ -255,11 +289,16 @@ static void mcast_example_task(void *pvParameters)
             seq_no_before = -1;
             old_len = len;
         }
+
+
+        // Loop waiting for UDP received, and sending UDP packets if we don't
+        // see any.
+        err = 1;
     
         while (err > 0) {
             len = recvfrom(sock, recvbuf, sizeof(recvbuf)-1, 0, (struct sockaddr *)&raddr, &socklen);
             if (len > 0) {
-                if (len != old_len)
+                if (len != old_len || reload_request != 0)
                     break;
                 //seq_no = ntohs(*(unsigned short *)(recvbuf+2));
                 seq_no =(recvbuf[2] << 8) | (recvbuf[3]);
@@ -321,16 +360,34 @@ static void mcast_example_task(void *pvParameters)
 static void manage_example_task(void *pvParameters)
 {
     int sock, i, rc, dst_ipv4_port;
+    int button, button_before;
     unsigned char recvbuf[384], *p;
+    struct _sdp {
+        char dst_ipv4_addr[16];
+        int  dst_ipv4_port;
+    } sdp_table[SDP_RECIEVE_ENTRY_MAX];
+    int sdp_table_max = 0;
     char p1 = 0, p2[64], dst_ipv4_addr[16];
     //char raddr_name[32] = { 0 };
     int len, err;
     struct sockaddr_storage raddr; // Large enough for IPv4
     socklen_t socklen = sizeof(raddr);
+    fd_set rfds, rfds_default;
+
+    esp_rom_gpio_pad_select_gpio(BUTTON_GPIO);
+    gpio_set_direction(BUTTON_GPIO, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(BUTTON_GPIO, GPIO_PULLUP_ONLY);  //PULLUP が必要  
 
     //rtp_payload_size = pcm_byte_per_frame * 48 * pcm_msec;
 
+    button = button_before = 0;
+
     while (1) {
+        struct timeval tv = {
+            .tv_sec = 0,
+            .tv_usec = 50 * 1000,	// 50 msec
+        };
+
         sock = create_multicast_ipv4_socket(SDP_IPV4_ADDR, SDP_PORT);
         if (sock < 0) {
             ESP_LOGE(TAG, "Failed to create IPv4 multicast socket");
@@ -350,12 +407,42 @@ static void manage_example_task(void *pvParameters)
         // We know this inet_aton will pass because we did it above already
         inet_aton(SDP_IPV4_ADDR, &sdestv4.sin_addr.s_addr);
 
+        FD_ZERO(&rfds_default);
+        FD_SET(sock, &rfds_default);
 
         // Loop waiting for UDP received, and sending UDP packets if we don't
         // see any.
         err = 1;
 
         while (err > 0) {
+            memcpy(&rfds, &rfds_default, sizeof(fd_set));
+            rc = select(sock + 1, &rfds, NULL, NULL, &tv);
+            if (rc == 0) {
+                button = !gpio_get_level(BUTTON_GPIO);
+                if (button == 1 && button_before == 0) {
+                    // search next SDP entry
+                    for (i=0; i<sdp_table_max; ++i) {
+                        if (!strcmp(sdp_table[i].dst_ipv4_addr, multicast_ipv4_addr_cur) && sdp_table[i].dst_ipv4_port == multicast_ipv4_port_cur)
+                            break;
+                    }
+                    if (i < sdp_table_max) {
+                        ++i;
+                        if (i >= sdp_table_max)
+                            i = 0;
+                    }
+                    if (i >= 0 && i < sdp_table_max) {
+                        strcpy(multicast_ipv4_addr_next, sdp_table[i].dst_ipv4_addr);
+                        multicast_ipv4_port_next = sdp_table[i].dst_ipv4_port;
+                        reload_request = 1;
+                    }
+                    ESP_LOGI(TAG, "Button pushed");
+                }            
+                button_before = button;
+                continue;
+            }
+            if (rc < 0) {
+                ESP_LOGE(TAG, "Select failed: errno %d", errno);
+            }
             len = recvfrom(sock, recvbuf, sizeof(recvbuf)-1, 0, (struct sockaddr *)&raddr, &socklen);
             if (len > 0) {
                 recvbuf[len] = '\0';
@@ -383,6 +470,16 @@ static void manage_example_task(void *pvParameters)
 //                                ESP_LOGI(TAG, "%c->%s", p1, p2);
                             }
                         }
+                    }
+                    // record to SDP table entry
+                    for (i=0; i<sdp_table_max; ++i) {
+                        if (!strcmp(sdp_table[i].dst_ipv4_addr, dst_ipv4_addr) && sdp_table[i].dst_ipv4_port == dst_ipv4_port)
+                            break;
+                    }
+                    if (i == sdp_table_max && i < SDP_RECIEVE_ENTRY_MAX) {
+                        strcpy(sdp_table[sdp_table_max].dst_ipv4_addr, dst_ipv4_addr);
+                        sdp_table[sdp_table_max].dst_ipv4_port = dst_ipv4_port;
+                        ++sdp_table_max;
                     }
                 }
             } else {
