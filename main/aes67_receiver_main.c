@@ -54,6 +54,7 @@ static char multicast_dst_ipv4_addr_next[16] = MULTICAST_IPV4_ADDR;
 static int  multicast_dst_ipv4_port_next = UDP_PORT;
 
 static int reload_request          = 0;
+static int source_cur              = 0;
 
 static int socket_add_ipv4_multicast_group(int sock, bool assign_source_if, char *ipv4_addr, int udp)
 {
@@ -396,6 +397,7 @@ static void manage_example_task(void *pvParameters)
     //rtp_payload_size = pcm_byte_per_frame * 48 * pcm_msec;
 
     button = button_before = 0;
+    source_cur = 0;
 
     sdp_table_max = 1;
     sdp_table[0].src_ipv4_addr_long = 0;
@@ -441,22 +443,14 @@ static void manage_example_task(void *pvParameters)
                 button = !gpio_get_level(BUTTON_GPIO);
                 if (button == 1 && button_before == 0) {
                     // search next SDP entry
-                    for (i=0; i<sdp_table_max; ++i) {
-                        if (!strcmp(sdp_table[i].dst_ipv4_addr, multicast_dst_ipv4_addr_cur) && sdp_table[i].dst_ipv4_port == multicast_dst_ipv4_port_cur)
-                            break;
+                    if (++source_cur >= sdp_table_max) {
+                        source_cur = 0;
                     }
-                    if (i < sdp_table_max) {
-                        ++i;
-                        if (i >= sdp_table_max)
-                            i = 0;
-                    }
-                    if (i >= 0 && i < sdp_table_max) {
-                        multicast_src_ipv4_addr_long_next = sdp_table[i].src_ipv4_addr_long;
-                        strcpy(multicast_dst_ipv4_addr_next, sdp_table[i].dst_ipv4_addr);
-                        multicast_dst_ipv4_port_next = sdp_table[i].dst_ipv4_port;
-                        reload_request = 1;
-                    }
-                    ESP_LOGI(TAG, "Button pushed");
+                    multicast_src_ipv4_addr_long_next = sdp_table[source_cur].src_ipv4_addr_long;
+                    strcpy(multicast_dst_ipv4_addr_next, sdp_table[source_cur].dst_ipv4_addr);
+                    multicast_dst_ipv4_port_next = sdp_table[source_cur].dst_ipv4_port;
+                    reload_request = 1;
+                    ESP_LOGI(TAG, "Button pushed. Source=%d", source_cur);
                 }            
                 button_before = button;
                 continue;
