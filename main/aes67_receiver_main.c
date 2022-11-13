@@ -45,11 +45,13 @@
 static const char *TAG = "multicast";
 static const char *V4TAG = "mcast-ipv4";
 
-static char multicast_ipv4_addr_cur[16] = MULTICAST_IPV4_ADDR;
-static int  multicast_ipv4_port_cur = UDP_PORT;
+static long multicast_src_ipv4_addr_long_cur = 0;
+static char multicast_dst_ipv4_addr_cur[16] = MULTICAST_IPV4_ADDR;
+static int  multicast_dst_ipv4_port_cur = UDP_PORT;
 
-static char multicast_ipv4_addr_next[16] = MULTICAST_IPV4_ADDR; 
-static int  multicast_ipv4_port_next = UDP_PORT;
+static long multicast_src_ipv4_addr_long_next = 0;
+static char multicast_dst_ipv4_addr_next[16] = MULTICAST_IPV4_ADDR; 
+static int  multicast_dst_ipv4_port_next = UDP_PORT;
 
 static int reload_request          = 0;
 
@@ -95,7 +97,7 @@ static int socket_add_ipv4_multicast_group(int sock, bool assign_source_if, char
     return err;
 }
 
-static int create_multicast_ipv4_socket(char *ipv4_addr, int udp)
+static int create_multicast_dst_ipv4_socket(char *ipv4_addr, int udp)
 {
     struct sockaddr_in saddr = { 0 };
     int sock = -1;
@@ -182,13 +184,14 @@ static void mcast_example_task(void *pvParameters)
 
 reload:
         if (reload_request) {
-            strcpy(multicast_ipv4_addr_cur, multicast_ipv4_addr_next);
-            multicast_ipv4_port_cur  = multicast_ipv4_port_next;
+            multicast_src_ipv4_addr_long_cur  = multicast_src_ipv4_addr_long_next;
+            strcpy(multicast_dst_ipv4_addr_cur, multicast_dst_ipv4_addr_next);
+            multicast_dst_ipv4_port_cur  = multicast_dst_ipv4_port_next;
             old_len = 0;
             reload_request = 0;
         }
 
-        sock = create_multicast_ipv4_socket(multicast_ipv4_addr_cur, multicast_ipv4_port_cur);
+        sock = create_multicast_dst_ipv4_socket(multicast_dst_ipv4_addr_cur, multicast_dst_ipv4_port_cur);
         if (sock < 0) {
             ESP_LOGE(TAG, "Failed to create IPv4 multicast socket");
         }
@@ -202,10 +205,10 @@ reload:
         // set destination multicast addresses for sending from these sockets
         struct sockaddr_in sdestv4 = {
             .sin_family = PF_INET,
-            .sin_port = htons(multicast_ipv4_port_cur),
+            .sin_port = htons(multicast_dst_ipv4_port_cur),
         };
         // We know this inet_aton will pass because we did it above already
-        inet_aton(multicast_ipv4_addr_cur, &sdestv4.sin_addr.s_addr);
+        inet_aton(multicast_dst_ipv4_addr_cur, &sdestv4.sin_addr.s_addr);
 
         FD_ZERO(&rfds_default);
         FD_SET(sock, &rfds_default);
@@ -222,7 +225,13 @@ reload:
                 goto reload;
             }
         } while (rc == 0);
-        len = recvfrom(sock, recvbuf, sizeof(recvbuf)-1, 0, (struct sockaddr *)&raddr, &socklen);
+        do {
+            len = recvfrom(sock, recvbuf, sizeof(recvbuf)-1, 0, (struct sockaddr *)&raddr, &socklen);
+        } while (multicast_src_ipv4_addr_long_cur != 0 && (((struct sockaddr_in *)&raddr)->sin_addr.s_addr) != multicast_src_ipv4_addr_long_cur);
+        if (multicast_src_ipv4_addr_long_cur == 0 && len >= 0) {
+            multicast_src_ipv4_addr_long_cur = (((struct sockaddr_in *)&raddr)->sin_addr.s_addr);
+        }
+//ESP_LOGI(TAG,"s_addr=%lX", (((struct sockaddr_in *)&raddr)->sin_addr.s_addr));
         if ( len != old_len ) {
             switch (len) {
                 case 204:  pcm_byte_per_frame = 4; pcm_msec = 1;  // L16 1ms
@@ -298,6 +307,9 @@ reload:
         while (err > 0) {
             len = recvfrom(sock, recvbuf, sizeof(recvbuf)-1, 0, (struct sockaddr *)&raddr, &socklen);
             if (len > 0) {
+//ESP_LOGI(TAG,"s_addr=%lX", (((struct sockaddr_in *)&raddr)->sin_addr.s_addr));
+                if ((((struct sockaddr_in *)&raddr)->sin_addr.s_addr) != multicast_src_ipv4_addr_long_cur)
+                    continue;
                 if (len != old_len || reload_request != 0)
                     break;
                 //seq_no = ntohs(*(unsigned short *)(recvbuf+2));
@@ -363,11 +375,14 @@ static void manage_example_task(void *pvParameters)
     int button, button_before;
     unsigned char recvbuf[384], *p;
     struct _sdp {
+        char src_ipv4_addr[16];
+        long src_ipv4_addr_long;
         char dst_ipv4_addr[16];
         int  dst_ipv4_port;
     } sdp_table[SDP_RECIEVE_ENTRY_MAX];
     int sdp_table_max;
-    char p1 = 0, p2[64], dst_ipv4_addr[16];
+    char p1 = 0, p2[64], dst_ipv4_addr[16], src_ipv4_addr[16];
+    long src_ipv4_addr_long;
     //char raddr_name[32] = { 0 };
     int len, err;
     struct sockaddr_storage raddr; // Large enough for IPv4
@@ -383,6 +398,7 @@ static void manage_example_task(void *pvParameters)
     button = button_before = 0;
 
     sdp_table_max = 1;
+    sdp_table[0].src_ipv4_addr_long = 0;
     strcpy( sdp_table[0].dst_ipv4_addr, MULTICAST_IPV4_ADDR);
     sdp_table[0].dst_ipv4_port = UDP_PORT;
 
@@ -392,7 +408,7 @@ static void manage_example_task(void *pvParameters)
             .tv_usec = 50 * 1000,	// 50 msec
         };
 
-        sock = create_multicast_ipv4_socket(SDP_IPV4_ADDR, SDP_PORT);
+        sock = create_multicast_dst_ipv4_socket(SDP_IPV4_ADDR, SDP_PORT);
         if (sock < 0) {
             ESP_LOGE(TAG, "Failed to create IPv4 multicast socket");
         }
@@ -426,7 +442,7 @@ static void manage_example_task(void *pvParameters)
                 if (button == 1 && button_before == 0) {
                     // search next SDP entry
                     for (i=0; i<sdp_table_max; ++i) {
-                        if (!strcmp(sdp_table[i].dst_ipv4_addr, multicast_ipv4_addr_cur) && sdp_table[i].dst_ipv4_port == multicast_ipv4_port_cur)
+                        if (!strcmp(sdp_table[i].dst_ipv4_addr, multicast_dst_ipv4_addr_cur) && sdp_table[i].dst_ipv4_port == multicast_dst_ipv4_port_cur)
                             break;
                     }
                     if (i < sdp_table_max) {
@@ -435,8 +451,9 @@ static void manage_example_task(void *pvParameters)
                             i = 0;
                     }
                     if (i >= 0 && i < sdp_table_max) {
-                        strcpy(multicast_ipv4_addr_next, sdp_table[i].dst_ipv4_addr);
-                        multicast_ipv4_port_next = sdp_table[i].dst_ipv4_port;
+                        multicast_src_ipv4_addr_long_next = sdp_table[i].src_ipv4_addr_long;
+                        strcpy(multicast_dst_ipv4_addr_next, sdp_table[i].dst_ipv4_addr);
+                        multicast_dst_ipv4_port_next = sdp_table[i].dst_ipv4_port;
                         reload_request = 1;
                     }
                     ESP_LOGI(TAG, "Button pushed");
@@ -467,9 +484,19 @@ static void manage_example_task(void *pvParameters)
                                 for (p0 = dst_ipv4_addr; p0 < (dst_ipv4_addr+strlen(dst_ipv4_addr)); ++p0)
                                     if (*p0 == '/') *p0 = '\0';
                                 ESP_LOGI(TAG, "Found Multicast addr:%s", dst_ipv4_addr);
-                            } else if (p1 == 'm') {		// Media name and transport
+                            } else if (p1 == 'm') {	// Media name and transport
                                 rc = sscanf(p2, "audio %d", &dst_ipv4_port);
                                 ESP_LOGI(TAG, "Found Multicast port:%d", dst_ipv4_port);
+                            } else if (p1 == 'o') {	// Origin
+                                char *p0;
+                                p0 = strstr(p2, "IP4 ");
+                                if (p0) {
+                                    rc = sscanf(p0, "IP4 %s", src_ipv4_addr);
+                                    if (rc == 1) {
+                                        inet_pton(AF_INET, src_ipv4_addr, (void *)&src_ipv4_addr_long);
+                                    }
+                                }
+                                ESP_LOGI(TAG, "Found Source IP addr:%lX", src_ipv4_addr_long);
                             } else {
 //                                ESP_LOGI(TAG, "%c->%s", p1, p2);
                             }
@@ -477,10 +504,12 @@ static void manage_example_task(void *pvParameters)
                     }
                     // record to SDP table entry
                     for (i=0; i<sdp_table_max; ++i) {
-                        if (!strcmp(sdp_table[i].dst_ipv4_addr, dst_ipv4_addr) && sdp_table[i].dst_ipv4_port == dst_ipv4_port)
+                        if (sdp_table[i].src_ipv4_addr_long == src_ipv4_addr_long && !strcmp(sdp_table[i].dst_ipv4_addr, dst_ipv4_addr) && sdp_table[i].dst_ipv4_port == dst_ipv4_port)
                             break;
                     }
                     if (i == sdp_table_max && i < SDP_RECIEVE_ENTRY_MAX) {
+                        strcpy(sdp_table[sdp_table_max].src_ipv4_addr, src_ipv4_addr);
+                        sdp_table[sdp_table_max].src_ipv4_addr_long = src_ipv4_addr_long;
                         strcpy(sdp_table[sdp_table_max].dst_ipv4_addr, dst_ipv4_addr);
                         sdp_table[sdp_table_max].dst_ipv4_port = dst_ipv4_port;
                         ++sdp_table_max;
