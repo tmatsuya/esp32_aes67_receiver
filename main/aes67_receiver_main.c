@@ -39,7 +39,7 @@
 
 #define	SDP_RECIEVE_ENTRY_MAX	(16)
 
-#define BUTTON_GPIO		(0)
+#define BUTTON_GPIO		(2)
 
 
 static const char *TAG = "multicast";
@@ -255,7 +255,8 @@ reload:
                 .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
     //            .slot_cfg = I2S_STD_PHILIP_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
                 .gpio_cfg = {
-                    .mclk = I2S_GPIO_UNUSED,
+//                    .mclk = I2S_GPIO_UNUSED,
+                    .mclk = GPIO_NUM_0,
                     .bclk = GPIO_NUM_26,
                     .ws = GPIO_NUM_22,
                     .dout = GPIO_NUM_25,
@@ -273,7 +274,8 @@ reload:
                 .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
     //            .slot_cfg = I2S_STD_PHILIP_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
                 .gpio_cfg = {
-                    .mclk = I2S_GPIO_UNUSED,
+//                    .mclk = I2S_GPIO_UNUSED,
+                    .mclk = GPIO_NUM_0,
                     .bclk = GPIO_NUM_26,
                     .ws = GPIO_NUM_22,
                     .dout = GPIO_NUM_25,

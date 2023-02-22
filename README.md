@@ -8,7 +8,8 @@
 
  1-2. 外付けDAC
 
-  [検証済みDAC](https://www.amazon.co.jp/gp/product/B0779QVRSH/)
+  [検証済みDAC] PCM5102   (https://www.amazon.co.jp/gp/product/B0779QVRSH/)
+  [検証済みDAC] Pmod I2S2 (https://digilent.com/reference/pmod/pmodi2s2/start)
 
 
 ## 必要ソフトウェア環境
@@ -44,11 +45,10 @@
 
 
 
-## ESP32と外付けDACの配線図
+## ESP32と外付けDAC(PCM5102)の配線図
 ```
   ESP32          DAC(PCM5102)
-             |   GND  *1
-             |   MCLK *1
+  IO0   ------   MCLK (or connect to GND)
   IO26  ------   BCLK
   IO25  ------   DATA
   IO22  ------   LRCK
@@ -57,7 +57,26 @@
   5V    ------   VCC
 ```
 
- *1  MCLKとGNDをショートすること。でないと音質が悪くなることがあるので注意。（はまった）
+## ESP32と外付けDAC(Pmod I2S2)の配線図
+```
+  ESP32               DAC(I2S2)
+  IO0   ------   PIN1 D/A MCLK
+  IO26  ------   PIN2 D/A SCLK
+  IO25  ------   PIN3 D/A SDIN
+  IO22  ------   PIN4 D/A LRCLK
+  GND   ------   PIN5 GND
+  3.3V  ------   PIN6 VCC (3.3V only !)
+```
+
+## ESP32とボタン(入力切り替え)の配線図
+```
+  ESP32          
+  IO2   ------   BUTTON(TACT SWITCH)
+```
 
 
-![配線写真](/photo.jpg)
+![配線写真 PCM5102](/photo_pcm5102.jpg)
+
+
+
+![配線写真 Pmod I2S2](/photo_pmodi2s2.jpg)
