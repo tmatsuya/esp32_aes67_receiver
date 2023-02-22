@@ -6,9 +6,11 @@
 
   [検証済みESP32](https://akizukidenshi.com/catalog/g/gM-15673/)
 
+
  1-2. 外付けDAC
 
   [検証済みDAC] PCM5102   (https://www.amazon.co.jp/gp/product/B0779QVRSH/)
+
   [検証済みDAC] Pmod I2S2 (https://digilent.com/reference/pmod/pmodi2s2/start)
 
 
@@ -57,6 +59,13 @@
   5V    ------   VCC
 ```
 
+![配線写真 PCM5102](/photo_pcm5102.jpg)
+
+
+
+
+
+
 ## ESP32と外付けDAC(Pmod I2S2)の配線図
 ```
   ESP32               DAC(I2S2)
@@ -68,15 +77,13 @@
   3.3V  ------   PIN6 VCC (3.3V only !)
 ```
 
+![配線写真 Pmod I2S2](/photo_pmodi2s2.jpg)
+
+
+
 ## ESP32とボタン(入力切り替え)の配線図
 ```
   ESP32          
   IO2   ------   BUTTON(TACT SWITCH)
 ```
 
-
-![配線写真 PCM5102](/photo_pcm5102.jpg)
-
-
-
-![配線写真 Pmod I2S2](/photo_pmodi2s2.jpg)
