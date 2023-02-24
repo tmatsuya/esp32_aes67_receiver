@@ -4,7 +4,7 @@
 
  1-1. ESP32
 
-  [検証済みESP32](https://akizukidenshi.com/catalog/g/gM-15673/)
+  [検証済みESP32](https://akizukidenshi.com/catalog/g/gM-13628/)
 
 
  1-2. 外付けDAC
@@ -18,7 +18,7 @@
 
  2-1. ESP-IDF
 
-  [ESP-IDF v4.2](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html)
+  [ESP-IDF v5.1](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html)
 
 
 ## 制限事項(2023/02/22 14:00現在)
@@ -81,9 +81,9 @@
 
 
 
-## ESP32とボタン(入力切り替え)の配線図
+## ESP32とボタン(入力切り替え)の配線図(IO2とGNDの間にタクトスイッチを挟む形です)
 ```
   ESP32          
-  IO2   ------   BUTTON(TACT SWITCH connect to GND, pull-down)
+  IO2   ------   BUTTON(TACT SWITCH connect to GND)  ------ GND
 ```
 
